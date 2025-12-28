@@ -575,17 +575,15 @@ defmodule Iconify do
 
   defp prepare_icon_css(icon, opts \\ []) do
     with [family_name, icon_name] <- family_and_icon(icon) do
-      # Translate v1 to v2 for backwards compatibility
-      {family_name, icon_name} = translate_heroicons_v1_to_v2(family_name, icon_name)
+      icon_name = String.trim_trailing(icon_name, "-icon")
 
-      icon_name =
-        icon_name
-        |> String.trim_trailing("-icon")
-
+      # Use original name for CSS lookup (CSS has whatever names the dev used)
       icon_css_name = css_icon_name(family_name, icon_name)
 
       if preparation_enabled?() do
-        do_prepare_icon_css(family_name, icon_name, icon_css_name, opts)
+        # For generating new CSS entries, translate v1→v2 for JSON lookup
+        {json_family, json_icon} = translate_heroicons_v1_to_v2(family_name, icon_name)
+        do_prepare_icon_css(json_family, json_icon, icon_css_name, opts)
       end
 
       icon_css_name
@@ -1033,10 +1031,22 @@ defmodule Iconify do
     end
   end
 
-  defp json_path(family_name),
-    do:
-      "#{@cwd}/assets/node_modules/@iconify/json/json/#{family_name}.json"
-      |> IO.inspect(label: "load JSON for #{family_name} icon family")
+  defp json_path(family_name) do
+    # __DIR__ is the directory containing this source file (lib/)
+    # Go up one level to get the iconify_ex root, then into assets/
+    lib_path = Path.join([__DIR__, "..", "assets", "node_modules", "@iconify", "json", "json", "#{family_name}.json"]) |> Path.expand()
+
+    # Also check the project's own assets folder (for projects that install directly)
+    project_path = Path.join([File.cwd!(), "assets", "node_modules", "@iconify", "json", "json", "#{family_name}.json"])
+
+    path = cond do
+      File.exists?(lib_path) -> lib_path
+      File.exists?(project_path) -> project_path
+      true -> lib_path  # Return lib path for error message
+    end
+
+    IO.inspect(path, label: "load JSON for #{family_name} icon family")
+  end
 
   defp css_svg(icon_name, svg) do
     css_with_data_svg(icon_name, data_svg(svg))
