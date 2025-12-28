@@ -48,7 +48,7 @@ defmodule Iconify do
 
       iex> {:img, _fun, %{src: "/images/icons/twemoji/rabbit.svg"}} = Iconify.prepare(%{icon: "twemoji:rabbit", __changed__: nil})
 
-      iex> {:css, _fun, %{icon_name: "heroicons:question-mark-circle-solid"}} = Iconify.prepare(%{icon: "non-existent-icon", __changed__: nil})
+      iex> {:css, _fun, %{icon_name: "heroicons-solid:question-mark-circle"}} = Iconify.prepare(%{icon: "non-existent-icon", __changed__: nil})
 
        > Iconify.prepare(%{icon: "<svg>...</svg>", __changed__: nil})
       {:inline, _fun, %{icon: "<svg>...</svg>"}}
@@ -170,10 +170,10 @@ defmodule Iconify do
   ## Examples
 
       iex> Iconify.fallback_icon()
-      "heroicons:question-mark-circle-solid"
+      "heroicons-solid:question-mark-circle"
   """
   def fallback_icon,
-    do: Application.get_env(:iconify_ex, :fallback_icon, "heroicons:question-mark-circle-solid")
+    do: Application.get_env(:iconify_ex, :fallback_icon, "heroicons-solid:question-mark-circle")
 
   if Mix.env() == :prod do
     def preparation_enabled? do
@@ -580,8 +580,19 @@ defmodule Iconify do
       # Use original name for CSS lookup (CSS has whatever names the dev used)
       icon_css_name = css_icon_name(family_name, icon_name)
 
-      if preparation_enabled?() do
-        # For generating new CSS entries, translate v1→v2 for JSON lookup
+      # Check if icon already exists in CSS - if so, we're done
+      css_path = css_path()
+      already_in_css = with {:ok, file} <- open_css_file(css_path) do
+        case check_exists_in_css_file(css_path, file, icon_css_name) do
+          {true, _} -> true
+          _ -> false
+        end
+      else
+        _ -> false
+      end
+
+      # Only try to generate from JSON if not in CSS and preparation is enabled
+      if not already_in_css and preparation_enabled?() do
         {json_family, json_icon} = translate_heroicons_v1_to_v2(family_name, icon_name)
         do_prepare_icon_css(json_family, json_icon, icon_css_name, opts)
       end
@@ -749,11 +760,27 @@ defmodule Iconify do
       |> Jason.decode!()
     else
       _ ->
-        icon_error(
-          icon_name,
-          "No icon set found at `#{json_filepath}` for the icon `#{icon_name}`. Find icon sets at https://icones.js.org"
-        )
+        icon_error_no_icon_set(json_filepath, icon_name)
     end
+  end
+
+  defp icon_error_no_icon_set(json_filepath, icon_name) do
+    icon_error(
+      icon_name,
+      """
+      No icon set found at `#{json_filepath}` for the icon `#{icon_name}`.
+
+      Icon sets must be installed before use. Run:
+
+          mix iconify.setup
+
+      Or manually:
+
+          cd deps/iconify_ex/assets && npm install
+
+      Find available icons at https://icones.js.org
+      """
+    )
   end
 
   defp module_name(family_name, icon_name) do
@@ -1075,7 +1102,7 @@ defmodule Iconify do
     |> Enum.map(&icon_name/1)
   end
 
-  defp family_and_icon(nil), do: {"heroicons", "question-mark-circle-solid"}
+  defp family_and_icon(nil), do: {"heroicons-solid", "question-mark-circle"}
 
   defp family_and_icon(name) do
     name
